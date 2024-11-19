@@ -241,6 +241,13 @@ static void xcp_process_udp_command(uint8_t* data, uint16_t length)
         // Process other XCP commands
         printf("Unknown command received: ");
         printf("tXcpCtoMessage.dlc=%d, tXcpCtoMessage.packet[0]=%02x\n", p->dlc, p->packet[0]);
+
+        gXcp.CrmLen = 2;
+        CRM_CMD = PID_ERR;
+        CRM_ERR = CRC_CMD_UNKNOWN;
+        XcpSendResponse();
+
+
     }
 }
 
