@@ -20,11 +20,11 @@
 #include "main.h"
 #include "cmsis_os.h"
 #include "lwip.h"
-#include <stdint.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "VectorXCP/xcp_eth_slave.h"
+#include "VectorXCP/xcp_eth_slave.c"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -39,7 +39,8 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+#define MAJOR 0   // BL Major version Number
+#define MINOR 1   // BL Minor version Number
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -49,12 +50,10 @@ RNG_HandleTypeDef hrng;
 
 UART_HandleTypeDef huart3;
 
-osThreadId masterTaskHandle;
-osThreadId XcpTransmitTaskHandle;
-osThreadId XcpReceiveTaskHandle;
-osMutexId Mutex_XCP_QueueHandle;
+osThreadId defaultTaskHandle;
+osThreadId xcpTaskHandle;
 /* USER CODE BEGIN PV */
-
+static const uint8_t AppVersion[2] = { MAJOR, MINOR };
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -63,9 +62,8 @@ static void MX_GPIO_Init(void);
 static void MX_RNG_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_ADC1_Init(void);
-void StartMasterTask(void const * argument);
-void StartXcpTransmitTask(void const * argument);
-void StartXcpReceiveTask(void const * argument);
+void StartDefaultTask(void const * argument);
+void StartXcpTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -109,13 +107,8 @@ int main(void)
   MX_USART3_UART_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-
+  printf("Starting STM32-VECTOR-XCP-SLAVE application version %d.%d\n", AppVersion[0], AppVersion[1] );
   /* USER CODE END 2 */
-
-  /* Create the mutex(es) */
-  /* definition and creation of Mutex_XCP_Queue */
-  osMutexDef(Mutex_XCP_Queue);
-  Mutex_XCP_QueueHandle = osMutexCreate(osMutex(Mutex_XCP_Queue));
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
@@ -134,17 +127,13 @@ int main(void)
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* definition and creation of masterTask */
-  osThreadDef(masterTask, StartMasterTask, osPriorityNormal, 0, 256);
-  masterTaskHandle = osThreadCreate(osThread(masterTask), NULL);
+  /* definition and creation of defaultTask */
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityAboveNormal, 0, 256);
+  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
-  /* definition and creation of XcpTransmitTask */
-  osThreadDef(XcpTransmitTask, StartXcpTransmitTask, osPriorityNormal, 0, 256);
-  XcpTransmitTaskHandle = osThreadCreate(osThread(XcpTransmitTask), NULL);
-
-  /* definition and creation of XcpReceiveTask */
-  osThreadDef(XcpReceiveTask, StartXcpReceiveTask, osPriorityIdle, 0, 256);
-  XcpReceiveTaskHandle = osThreadCreate(osThread(XcpReceiveTask), NULL);
+  /* definition and creation of xcpTask */
+  osThreadDef(xcpTask, StartXcpTask, osPriorityBelowNormal, 0, 256);
+  xcpTaskHandle = osThreadCreate(osThread(xcpTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -498,19 +487,20 @@ int fputc(int ch, FILE *f)
 }
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_StartMasterTask */
+/* USER CODE BEGIN Header_StartDefaultTask */
 /**
-  * @brief  Function implementing the masterTask thread.
+  * @brief  Function implementing the defaultTask thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_StartMasterTask */
-void StartMasterTask(void const * argument)
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void const * argument)
 {
   /* init code for LWIP */
   MX_LWIP_Init();
   /* USER CODE BEGIN 5 */
   static uint32_t lifetime = 0;
+  static uint8_t ledON = 1;  
   /* Infinite loop */
   for(int i=0;;i++)
   {
@@ -518,47 +508,57 @@ void StartMasterTask(void const * argument)
     if(i>1000)
     {
         i = 0;
-        lifetime++;
-        printf("Still Alive after %d second(s)", lifetime);
+        // print every 10 sec
+        if( !(lifetime++%10) )
+        {
+            printf("Still Alive after %d second(s), ", lifetime);
+            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, ledON++%2 );    //Blue LED ON/OFF  
+            dhcp_status_trace();
+            puts("");
+        }
     }
   }
   /* USER CODE END 5 */
 }
 
-/* USER CODE BEGIN Header_StartXcpTransmitTask */
+/* USER CODE BEGIN Header_StartXcpTask */
 /**
-* @brief Function implementing the XcpTransmitTask thread.
+* @brief Function implementing the XcpTask thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartXcpTransmitTask */
-void StartXcpTransmitTask(void const * argument)
+/* USER CODE END Header_StartXcpTask */
+void StartXcpTask(void const * argument)
 {
-  /* USER CODE BEGIN StartXcpTransmitTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END StartXcpTransmitTask */
-}
+  /* USER CODE BEGIN StartXcpTask */
 
-/* USER CODE BEGIN Header_StartXcpReceiveTask */
-/**
-* @brief Function implementing the XcpReceiveTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartXcpReceiveTask */
-void StartXcpReceiveTask(void const * argument)
-{
-  /* USER CODE BEGIN StartXcpReceiveTask */
+  for(;;)
+  {
+      osDelay(1);
+      if( dhcp_status_trace() )
+      {
+          printf("Got DHCP IP - trying XCP init\n");
+          if( HAL_OK != XCP_Udp_Slave_Init() )
+          {
+              printf("XCP init failed\n");
+          }
+          else
+          {
+              printf("XCP init OK\n");  
+          }
+          break;
+      }
+  }
+  
+
+
+
   /* Infinite loop */
   for(;;)
   {
     osDelay(1);
   }
-  /* USER CODE END StartXcpReceiveTask */
+  /* USER CODE END StartXcpTask */
 }
 
 /**

@@ -21,6 +21,7 @@
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __mx_lwip_H
 #define __mx_lwip_H
+#include <stdint.h>
 #ifdef __cplusplus
  extern "C" {
 #endif
@@ -41,7 +42,7 @@
 #endif /* WITH_RTOS */
 
 /* USER CODE BEGIN 0 */
-
+int8_t dhcp_status_trace(void);
 /* USER CODE END 0 */
 
 /* Global Variables ----------------------------------------------------------*/
