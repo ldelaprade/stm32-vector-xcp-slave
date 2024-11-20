@@ -155,7 +155,7 @@ static void XcpSendResponse()
     // Build XCP CTO message (ctr+dlc+packet)
     tXcpCtoMessage msg;
     msg.dlc = (uint16_t)gXcp.CrmLen;
-    msg.ctr = ++xcp_udp_state.lastCtr;
+    msg.ctr = xcp_udp_state.lastCtr++;
     memcpy(msg.packet, &gXcp.Crm, gXcp.CrmLen);
     
 
@@ -262,6 +262,11 @@ static void xcp_udp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const i
     // Store remote address and port for response
     ip_addr_copy(xcp_udp_state.remote_addr, *addr);
     xcp_udp_state.remote_port = port;
+
+    printf("                          ----\n");
+    printf("                         | %02d |\n", xcp_udp_state.lastCtr);
+    printf("                          ----\n");
+
 
     // Distant IP address 
     char ip_addr_str[16];
