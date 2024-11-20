@@ -7,6 +7,7 @@
 #include "xcp.h"
 #include "xcp_cfg.h"
 #include "xcptl_cfg.h"
+#include "xcp_measures.h"
 #include "patch.h"
 
 //#define XCP_CPUTYPE_BIGENDIAN
@@ -117,6 +118,9 @@ typedef struct
     tXcpCto Crm;                           /* RES,ERR message buffer */
     tXcpCto Cro;                           /* CMD message buffer */    
 
+    uint32_t MtaAddr;
+
+
 } tXcpData;
 
 
@@ -175,16 +179,18 @@ static void XcpSendResponse()
 }
 
 
-static void xcp_process_udp_command(uint8_t* data, uint16_t length) 
+static void xcp_process_udp_command(uint8_t* data) 
 {
-    tXcpCtoMessage *p = (tXcpCtoMessage*)data;
+    #define return_xcp_command_error(err) {  gXcp.CrmLen = 2; CRM_CMD=PID_ERR; CRM_ERR=(err); XcpSendResponse(); return; }
+    #define fill_cro_details_from_message() { gXcp.CroLen=p->dlc; memcpy(&gXcp.Cro, p->packet, gXcp.CroLen); }
 
+    tXcpCtoMessage *p = (tXcpCtoMessage*)data;
     printf("tXcpCtoMessage.dlc=%d, tXcpCtoMessage.packet[0]=%02x\n", p->dlc, p->packet[0]);
   
     // Check for extended connect request format
     if(p->dlc==CRO_CONNECT_LEN && p->packet[0] == CC_CONNECT)   // Connect command
     {
-        printf("XCP connect request received:\n");             
+        printf("XCP connect request received:\n");          
         xcp_udp_state.connected = 1;
         gXcp.SessionStatus = (uint16_t)(SS_INITIALIZED | SS_STARTED | SS_CONNECTED | SS_LEGACY_MODE);    
         // Prepare response
@@ -214,7 +220,6 @@ static void xcp_process_udp_command(uint8_t* data, uint16_t length)
         CRM_GET_STATUS_CONFIG_ID = 0; /* Session configuration ID not available. */
         XcpSendResponse();
     }
-
     else if( p->dlc==CRO_DISCONNECT_LEN && p->packet[0] == CC_DISCONNECT  )
     {
         printf("XCP disconnect request received\n");        
@@ -235,20 +240,42 @@ static void xcp_process_udp_command(uint8_t* data, uint16_t length)
         CRM_GET_COMM_MODE_INFO_QUEUE_SIZE     = 0x01;
         CRM_GET_COMM_MODE_INFO_DRIVER_VERSION = 0x10;
         XcpSendResponse();
-    }    
+    }
+    else if( p->dlc==CRO_SET_MTA_LEN && p->packet[0] == CC_SET_MTA  )
+    {
+        fill_cro_details_from_message();        
+        gXcp.MtaAddr = CRO_SET_MTA_ADDR;
+        printf("CC_SET_MTA request received with addr=%d\n", gXcp.MtaAddr );
+        // Prepare response
+        CRM_CMD = PID_RES; /* Response, no error */
+        CRM_ERR = 0;
+        gXcp.CrmLen = CRM_SET_MTA_LEN;
+        XcpSendResponse();
+    }
+    else if( p->dlc==CRO_SHORT_UPLOAD_LEN && p->packet[0] == CC_SHORT_UPLOAD  )
+    {
+        fill_cro_details_from_message();
+        uint8_t size = CRO_SHORT_UPLOAD_SIZE;
+        if (size > CRM_SHORT_UPLOAD_MAX_SIZE)
+            return_xcp_command_error(CRC_OUT_OF_RANGE);        
+        gXcp.MtaAddr = CRO_SHORT_UPLOAD_ADDR;
+
+        printf("MTA address requested is: %04x\n", gXcp.MtaAddr);        
+        if( size != XcpReadMta(gXcp.MtaAddr, size, CRM_SHORT_UPLOAD_DATA) )
+            return_xcp_command_error(CRC_ACCESS_DENIED);
+        gXcp.CrmLen = (uint8_t)(CRM_SHORT_UPLOAD_LEN+size);
+        XcpSendResponse();
+    }
     else 
     {
         // Process other XCP commands
-        printf("Unknown command received: ");
+        printf("Command received: ");
         printf("tXcpCtoMessage.dlc=%d, tXcpCtoMessage.packet[0]=%02x\n", p->dlc, p->packet[0]);
-
-        gXcp.CrmLen = 2;
-        CRM_CMD = PID_ERR;
-        CRM_ERR = CRC_CMD_UNKNOWN;
-        XcpSendResponse();
-
-
+        return_xcp_command_error(CRC_CMD_UNKNOWN);
     }
+
+
+
 }
 
 
@@ -278,7 +305,7 @@ static void xcp_udp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const i
     }
     puts("");
 
-    xcp_process_udp_command(xcp_udp_state.rx_buffer, xcp_udp_state.rx_length);
+    xcp_process_udp_command(xcp_udp_state.rx_buffer);
     
     pbuf_free(p);
 }

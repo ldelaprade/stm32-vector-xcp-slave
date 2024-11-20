@@ -1,0 +1,23 @@
+﻿ASAP2_VERSION 1 71
+/begin PROJECT STM32F767Zi ""
+
+  /begin HEADER ""
+    VERSION "1.0"
+  /end HEADER
+
+  /begin MODULE NUCLEO_XCP_SLAVE "XCP Slave test"
+
+    /begin MEASUREMENT ButtonStatus "Button State"
+      UBYTE NO_COMPU_METHOD 0 0 0 1
+      ECU_ADDRESS 0x2000
+    /end MEASUREMENT
+
+    /begin MEASUREMENT Temperature "CPU Temperature"
+      FLOAT32_IEEE NO_COMPU_METHOD 0 0 -10 50
+      ECU_ADDRESS 0x1000
+    /end MEASUREMENT
+
+
+  /end MODULE
+
+/end PROJECT

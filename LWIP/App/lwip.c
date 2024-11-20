@@ -19,7 +19,6 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
-#include <stdio.h>
 #include "lwip.h"
 #include "lwip/init.h"
 #include "lwip/netif.h"

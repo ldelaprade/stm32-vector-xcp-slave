@@ -21,7 +21,6 @@
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __mx_lwip_H
 #define __mx_lwip_H
-#include <stdint.h>
 #ifdef __cplusplus
  extern "C" {
 #endif

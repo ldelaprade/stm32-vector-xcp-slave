@@ -25,6 +25,8 @@
 /* USER CODE BEGIN Includes */
 #include "VectorXCP/xcp_eth_slave.h"
 #include "VectorXCP/xcp_eth_slave.c"
+#include "VectorXCP/xcp_measures.h"
+#include "VectorXCP/xcp_measures.c"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -52,6 +54,8 @@ UART_HandleTypeDef huart3;
 
 osThreadId defaultTaskHandle;
 osThreadId xcpTaskHandle;
+osMutexId xcpStateAccessMutexHandle;
+osStaticMutexDef_t xcpStateAccessMutexControlBlock;
 /* USER CODE BEGIN PV */
 static const uint8_t AppVersion[2] = { MAJOR, MINOR };
 /* USER CODE END PV */
@@ -109,6 +113,11 @@ int main(void)
   /* USER CODE BEGIN 2 */
   printf("Starting STM32-VECTOR-XCP-SLAVE application version %d.%d\n", AppVersion[0], AppVersion[1] );
   /* USER CODE END 2 */
+
+  /* Create the mutex(es) */
+  /* definition and creation of xcpStateAccessMutex */
+  osMutexStaticDef(xcpStateAccessMutex, &xcpStateAccessMutexControlBlock);
+  xcpStateAccessMutexHandle = osMutexCreate(osMutex(xcpStateAccessMutex));
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
@@ -508,13 +517,25 @@ void StartDefaultTask(void const * argument)
     if(i>1000)
     {
         i = 0;
-        // print every 10 sec
-        if( !(lifetime++%10) )
+        if( !(lifetime++%3) )
+        {
+            // Refresh states for XCP Measures
+            RefreshState();
+        }
+        else if( !(lifetime++%30) )
         {
             printf("Still Alive after %d second(s), ", lifetime);
+
             HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, ledON++%2 );    //Blue LED ON/OFF  
             dhcp_status_trace();
             puts("");
+
+            float value = GetTemperature();
+            // Convert float to integer parts
+            int whole = (int)value;
+            int frac = (int)((value - whole) * 1000);
+            printf("Temperature=%d.%02d, user button state=%d\n", whole, frac, GetButtonState());
+
         }
     }
   }
@@ -535,7 +556,7 @@ void StartXcpTask(void const * argument)
   for(;;)
   {
       osDelay(1);
-      if( dhcp_status_trace() )
+      if( dhcp_status_trace() ) // Do not start before we got IP address from DHCP
       {
           printf("Got DHCP IP - trying XCP init\n");
           if( HAL_OK != XCP_Udp_Slave_Init() )
@@ -550,8 +571,6 @@ void StartXcpTask(void const * argument)
       }
   }
   
-
-
 
   /* Infinite loop */
   for(;;)
