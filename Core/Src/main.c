@@ -520,7 +520,13 @@ void StartDefaultTask(void const * argument)
         if( !(lifetime++%3) )
         {
             // Refresh states for XCP Measures
-            RefreshState();
+            if (xSemaphoreTake(xcpStateAccessMutexHandle, portMAX_DELAY) == pdTRUE)
+            {
+                // Critical section
+                RefreshState();
+                // Give the mutex back
+                xSemaphoreGive(xcpStateAccessMutexHandle);
+            }
         }
         else if( !(lifetime++%30) )
         {
