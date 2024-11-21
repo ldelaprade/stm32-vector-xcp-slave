@@ -97,6 +97,14 @@ void CalcButtonState(void)
 
 void RefreshState(void)
 {
-    CalcTemperature();
-    CalcButtonState();
+    // Refresh states for XCP Measures
+    if (xSemaphoreTake(xcpStateAccessMutexHandle, portMAX_DELAY) == pdTRUE)
+    {                
+        // Critical section
+        CalcTemperature();
+        CalcButtonState();
+        // Give the mutex back
+        xSemaphoreGive(xcpStateAccessMutexHandle);
+    }
+
 }

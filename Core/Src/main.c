@@ -517,18 +517,11 @@ void StartDefaultTask(void const * argument)
     if(i>1000)
     {
         i = 0;
-        if( !(lifetime++%3) )
+        if( !(lifetime%3) )
         {
-            // Refresh states for XCP Measures
-            if (xSemaphoreTake(xcpStateAccessMutexHandle, portMAX_DELAY) == pdTRUE)
-            {
-                // Critical section
-                RefreshState();
-                // Give the mutex back
-                xSemaphoreGive(xcpStateAccessMutexHandle);
-            }
+            RefreshState();
         }
-        else if( !(lifetime++%30) )
+        else if( !(lifetime%10) )
         {
             printf("Still Alive after %d second(s), ", lifetime);
 
@@ -543,6 +536,7 @@ void StartDefaultTask(void const * argument)
             printf("Temperature=%d.%02d, user button state=%d\n", whole, frac, GetButtonState());
 
         }
+        lifetime++;        
     }
   }
   /* USER CODE END 5 */
